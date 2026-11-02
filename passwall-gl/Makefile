@@ -31,6 +31,9 @@ endef
 define Build/Compile
 endef
 
+Package/$(PKG_NAME)/preinst = $(file < $(CURDIR)/preinst.sh)
+Package/$(PKG_NAME)/postinst = $(file < $(CURDIR)/postinst.sh)
+
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/share/oui/menu.d
 	$(INSTALL_DATA) ./root/usr/share/oui/menu.d/passwall.json $(1)/usr/share/oui/menu.d/

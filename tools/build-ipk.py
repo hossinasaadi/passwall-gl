@@ -7,6 +7,7 @@ quick install-and-test cycles on a router.
 
   python3 tools/build-ipk.py            # builds both into dist/
   python3 tools/build-ipk.py passwall-gl
+  python3 tools/build-ipk.py passwall-gl-full   # everything in one ipk (needs dist/deps)
   python3 tools/build-ipk.py bin --help # pack a prebuilt binary (used by build-deps.sh)
 
 Differences from an SDK build: LuCI translations (.lmo) are not compiled, so
@@ -21,6 +22,7 @@ import re
 import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -84,8 +86,12 @@ def add_path(tar: tarfile.TarFile, path: Path, rel: str, mtime: int, seen: set) 
             tar.addfile(info)
     if not path.is_file():
         return 0
+    name = "./" + rel.strip("/")
+    if name in seen:
+        raise SystemExit(f"two sources for {name}")
+    seen.add(name)
     data = path.read_bytes()
-    info = tarfile.TarInfo("./" + rel.strip("/"))
+    info = tarfile.TarInfo(name)
     info.size, info.mtime = len(data), mtime
     info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
     tar.addfile(info, io.BytesIO(data))
@@ -117,7 +123,8 @@ def member(name: str, data: bytes, mtime: int, mode: int = 0o644) -> tuple[tarfi
 
 
 def build_ipk(name, version, depends, section, description, trees=(), files=(), postinst="",
-              conffiles=(), arch="all", license="GPL-3.0-only", out=OUT):
+              conffiles=(), arch="all", license="GPL-3.0-only", out=OUT, preinst="",
+              control_extra=()):
     mtime = source_date()
 
     def data(tar):
@@ -135,11 +142,14 @@ def build_ipk(name, version, depends, section, description, trees=(), files=(), 
         f"Section: {section}",
         f"Architecture: {arch}",
         f"Installed-Size: {installed}",
+        *control_extra,
         f"Description: {description}",
     ]) + "\n"
 
     def ctrl(tar):
         tar.addfile(*member("control", control.encode(), mtime))
+        if preinst:
+            tar.addfile(*member("preinst", preinst.encode(), mtime, 0o755))
         tar.addfile(*member("postinst", (POSTINST + postinst).encode(), mtime, 0o755))
         tar.addfile(*member("prerm", PRERM.encode(), mtime, 0o755))
         if conffiles:
@@ -157,32 +167,93 @@ def build_ipk(name, version, depends, section, description, trees=(), files=(), 
     print(f"built {dest.relative_to(REPO) if dest.is_relative_to(REPO) else dest} ({dest.stat().st_size} bytes)")
 
 
-def luci_app_passwall():
+PASSWALL_CONFFILES = ["/etc/config/passwall", "/etc/config/passwall_server"]
+
+
+def luci_app_passwall_spec():
     pkg = REPO / "luci-app-passwall"
     mk = pkg / "Makefile"
-    version = f"{make_var(mk, 'PKG_VERSION')}-{make_var(mk, 'PKG_RELEASE')}"
-    build_ipk(
-        "luci-app-passwall", version,
-        ["luci-base"] + deps_list(make_var(mk, "LUCI_DEPENDS")),
-        "luci", make_var(mk, "LUCI_TITLE"),
-        [(pkg / "luasrc", "/usr/lib/lua/luci"), (pkg / "htdocs", "/www"), (pkg / "root", "/")],
-        postinst=LUCI_POSTINST,
-        conffiles=["/etc/config/passwall", "/etc/config/passwall_server"],
-    )
+    return {
+        "version": f"{make_var(mk, 'PKG_VERSION')}-{make_var(mk, 'PKG_RELEASE')}",
+        "depends": ["luci-base"] + deps_list(make_var(mk, "LUCI_DEPENDS")),
+        "title": make_var(mk, "LUCI_TITLE"),
+        "trees": [(pkg / "luasrc", "/usr/lib/lua/luci"), (pkg / "htdocs", "/www"), (pkg / "root", "/")],
+    }
 
 
-def passwall_gl():
+def passwall_gl_spec():
     pkg = REPO / "passwall-gl"
     view = pkg / "root/www/views/gl-sdk4-ui-passwall.common.js.gz"
     if not view.exists():
         raise SystemExit("page not built: run  npm --prefix passwall-gl/ui run build")
     mk = pkg / "Makefile"
-    version = f"{make_var(mk, 'PKG_VERSION')}-{make_var(mk, 'PKG_RELEASE')}"
-    build_ipk(
-        "passwall-gl", version, ["luci-app-passwall"], "net",
-        "PassWall page for the GL.iNet admin panel",
-        [(pkg / "root", "/")],
-    )
+    return {
+        "version": f"{make_var(mk, 'PKG_VERSION')}-{make_var(mk, 'PKG_RELEASE')}",
+        "trees": [(pkg / "root", "/")],
+        "preinst": (pkg / "preinst.sh").read_text(),
+        # Appended after the standard postinst, so its own #! line is just a comment.
+        "postinst": "\n" + (pkg / "postinst.sh").read_text(),
+    }
+
+
+def luci_app_passwall():
+    s = luci_app_passwall_spec()
+    build_ipk("luci-app-passwall", s["version"], s["depends"], "luci", s["title"], s["trees"],
+              postinst=LUCI_POSTINST, conffiles=PASSWALL_CONFFILES)
+
+
+def passwall_gl():
+    s = passwall_gl_spec()
+    build_ipk("passwall-gl", s["version"], ["luci-app-passwall"], "net",
+              "PassWall page for the GL.iNet admin panel", s["trees"], preinst=s["preinst"],
+              postinst=s["postinst"])
+
+
+# Packages PassWall's iptables rules need that its Makefile only selects in
+# the build config, so no package depends on them. Same list as install.sh.
+FEED_EXTRAS = ["iptables-mod-iprange"]
+
+
+def read_ipk(ipk: Path) -> tuple[dict, bytes]:
+    """Return an ipk's control fields and its data.tar.gz."""
+    with tarfile.open(ipk) as outer:
+        ctrl = outer.extractfile("./control.tar.gz").read()
+        data = outer.extractfile("./data.tar.gz").read()
+    with tarfile.open(fileobj=io.BytesIO(ctrl)) as t:
+        text = t.extractfile("./control").read().decode()
+    fields = dict(line.split(": ", 1) for line in text.splitlines() if ": " in line)
+    return fields, data
+
+
+def passwall_gl_full(arch="aarch64_cortex-a53"):
+    """Everything in one ipk, for installing from a web page such as LuCI's
+    System > Software > Upload Package. Only packages from GL's own feed
+    remain as dependencies, and opkg fetches those."""
+    parts = sorted((OUT / "deps").glob(f"*_{arch}.ipk")) + sorted((OUT / "deps").glob("*_all.ipk"))
+    if not parts:
+        raise SystemExit(f"no dependency packages for {arch} in dist/deps; run tools/build-deps.sh first")
+    lap, gl = luci_app_passwall_spec(), passwall_gl_spec()
+    bundled = {"luci-app-passwall", "passwall-gl"}
+    depends = set(lap["depends"])
+    trees = lap["trees"] + gl["trees"]
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, ipk in enumerate(parts):
+            fields, data = read_ipk(ipk)
+            bundled.add(fields["Package"])
+            depends |= {d.split()[0] for d in fields.get("Depends", "").split(",") if d.strip()}
+            dest = Path(tmp) / str(i)
+            with tarfile.open(fileobj=io.BytesIO(data)) as t:
+                t.extractall(dest, filter="data")
+            trees.append((dest, "/"))
+        build_ipk(
+            "passwall-gl-full", gl["version"],
+            sorted(depends - bundled - {"libc"}) + FEED_EXTRAS, "net",
+            "PassWall for GL.iNet in one package: Xray, PassWall, its helpers, geo data "
+            "and the GL admin page",
+            # The GL part first: LUCI_POSTINST ends the script with exit 0.
+            trees, postinst=gl["postinst"] + LUCI_POSTINST, preinst=gl["preinst"], conffiles=PASSWALL_CONFFILES,
+            arch=arch, control_extra=["Conflicts: " + ", ".join(sorted(bundled))],
+        )
 
 
 def prebuilt(argv):
@@ -208,13 +279,18 @@ def prebuilt(argv):
               a.section, a.description, files=files, arch=a.arch, license=a.license, out=a.out)
 
 
-BUILDERS = {"luci-app-passwall": luci_app_passwall, "passwall-gl": passwall_gl}
+BUILDERS = {
+    "luci-app-passwall": luci_app_passwall,
+    "passwall-gl": passwall_gl,
+    "passwall-gl-full": passwall_gl_full,
+}
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["bin"]:
         prebuilt(sys.argv[2:])
         sys.exit()
-    names = sys.argv[1:] or list(BUILDERS)
+    # The all-in-one package needs tools/build-deps.sh first, so only on request.
+    names = sys.argv[1:] or ["luci-app-passwall", "passwall-gl"]
     for n in names:
         if n not in BUILDERS:
             raise SystemExit(f"unknown package {n}; choose from {', '.join(BUILDERS)}")

@@ -93,7 +93,7 @@
 </template>
 
 <script>
-import { rpc } from '../rpc.js'
+import { rpc, asList } from '../rpc.js'
 import { nodeLabel } from '../labels.js'
 
 // PassWall's defaults for options that are unset in UCI.
@@ -174,10 +174,10 @@ export default {
     },
     load() {
       this.error = ''
-      Promise.all([rpc('status'), rpc('list_nodes'), rpc('get_global')])
+      Promise.all([rpc('get_status'), rpc('get_nodes'), rpc('get_global')])
         .then(([status, list, global]) => {
           this.status = status
-          this.nodes = list.nodes || []
+          this.nodes = asList(list.nodes)
           const values = {}
           for (const k of Object.keys(DEFAULTS)) values[k] = global[k] != null ? global[k] : DEFAULTS[k]
           this.saved = values
@@ -186,7 +186,7 @@ export default {
         .catch(this.fail)
     },
     refreshStatus() {
-      rpc('status')
+      rpc('get_status')
         .then((s) => (this.status = s))
         .catch(() => {})
     },

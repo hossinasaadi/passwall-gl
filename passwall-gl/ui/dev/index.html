@@ -8,6 +8,10 @@
       body { margin: 0; background: #f5f7fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
       .host { padding: 24px 16px; }
       .banner { background: #fff4e5; color: #8a5300; padding: 6px 16px; font-size: 12px; }
+      .shot .banner { display: none; }
+      /* Headless Chrome's virtual clock doesn't run CSS transitions, so a
+         switch can be caught halfway; screenshots show the end state. */
+      .shot *, .shot *::before { transition: none !important; }
     </style>
   </head>
   <body>

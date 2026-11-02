@@ -2,42 +2,71 @@
 --
 -- This is free software, licensed under the GNU General Public License v3.
 --
--- oui-httpd may run a different Lua than PassWall, so this module stays thin:
--- it hands each call to /usr/share/passwall-gl/api.lua, which runs under
--- PassWall's own Lua 5.1 environment. Arguments travel in a temporary JSON
--- file, so caller data never becomes part of a shell command.
+-- This runs inside GL's nginx, whose Lua is not PassWall's, so it stays
+-- thin: it hands each call to /usr/share/passwall-gl/api.lua, which runs
+-- under PassWall's own Lua 5.1 environment. The request and the answer
+-- travel in temporary files, so caller data never becomes part of a shell
+-- command.
 
 local cjson = require "cjson"
 
 local BACKEND = "/usr/share/passwall-gl/api.lua"
+-- The backend's error output, kept for diagnosing failed calls.
+local ERR_LOG = "/tmp/passwall-gl.err"
+
+local function read_file(path)
+	local f = io.open(path, "r")
+	if not f then return nil end
+	local s = f:read("*a")
+	f:close()
+	return s
+end
+
+-- Keep the error log small; it only needs the most recent failures.
+local function trim_err_log()
+	local f = io.open(ERR_LOG, "r")
+	if f then
+		local size = f:seek("end")
+		f:close()
+		if size and size > 65536 then os.remove(ERR_LOG) end
+	end
+end
 
 local function call(method, args)
 	local req = os.tmpname()
+	local res = req .. ".out"
 	local f = io.open(req, "w")
 	if not f then
 		return { code = -1, error = "cannot create request file" }
 	end
 	f:write(cjson.encode(type(args) == "table" and args or {}))
 	f:close()
+	trim_err_log()
 
-	local p = io.popen("lua " .. BACKEND .. " " .. method .. " " .. req .. " 2>/dev/null")
-	local out = p and p:read("*a") or ""
-	if p then p:close() end
+	-- os.execute, not io.popen: nginx's own signal handling can cut a pipe
+	-- read short, while system() blocks SIGCHLD until the command is done.
+	-- The backend writes its answer to res only once it is complete.
+	os.execute("lua " .. BACKEND .. " " .. method .. " " .. req .. " " .. res .. " 2>>" .. ERR_LOG)
+	local out = read_file(res) or ""
 	os.remove(req)
+	os.remove(res)
 
-	local ok, res = pcall(cjson.decode, out)
-	if not ok or type(res) ~= "table" then
-		return { code = -1, error = "backend returned no result" }
+	local ok, decoded = pcall(cjson.decode, out)
+	if not ok or type(decoded) ~= "table" then
+		return { code = -1, error = "PassWall's backend didn't answer. Try again; details are in " .. ERR_LOG .. " on the router." }
 	end
-	return res
+	return decoded
 end
 
 local M = {}
 
 -- Method names are fixed here; they are the only words that reach the shell.
 for _, name in ipairs({
-	"status", "get_global", "set_global",
-	"list_nodes", "set_node", "ping_node", "urltest_node", "add_links", "delete_nodes",
+	"get_status", "get_global", "set_global",
+	"get_nodes", "set_node", "ping_node", "urltest_node", "add_links", "delete_nodes",
+	"get_subscriptions", "save_subscription", "delete_subscription", "update_subscription",
+	"update_all_subscriptions", "delete_subscription_nodes", "delete_all_subscription_nodes",
+	"set_subscribe_filter", "get_rules", "save_rules",
 	"connect_status", "get_log", "clear_log", "restart",
 }) do
 	M[name] = function(args) return call(name, args) end

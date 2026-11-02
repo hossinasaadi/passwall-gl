@@ -1,6 +1,9 @@
 #!/bin/sh
-# Pack the end-user bundle: install.sh plus every package it installs.
-#   tools/make-bundle.sh   ->   dist/passwall-gl-<version>-<arch>.tar.gz
+# Pack the two end-user downloads:
+#   dist/passwall-gl-<version>-<arch>.tar.gz      install.sh plus every package,
+#                                                 installed over SSH
+#   dist/passwall-gl-full_<version>_<arch>.ipk    everything in one package, for
+#                                                 LuCI's System > Software > Upload
 #
 # Run tools/build-deps.sh first. The bundle is installed on the router with:
 #   tar -xzf passwall-gl-*.tar.gz && sh passwall-gl-*/install.sh
@@ -18,12 +21,12 @@ ls dist/deps/*_"$ARCH".ipk >/dev/null 2>&1 || {
 }
 
 npm --prefix passwall-gl/ui run build
-python3 -I tools/build-ipk.py
+python3 -I tools/build-ipk.py luci-app-passwall passwall-gl passwall-gl-full
 
 stage="dist/bundle/$name"
 rm -rf dist/bundle
 mkdir -p "$stage/packages"
-cp dist/luci-app-passwall_*_all.ipk dist/passwall-gl_*_all.ipk dist/deps/*.ipk "$stage/packages/"
+cp dist/luci-app-passwall_*_all.ipk dist/passwall-gl_[0-9]*_all.ipk dist/deps/*.ipk "$stage/packages/"
 cp passwall-gl/bundle/install.sh "$stage/"
 echo "$ARCH" > "$stage/ARCH"
 cp LICENSE "$stage/LICENSE"
@@ -50,3 +53,5 @@ cp LICENSE "$stage/LICENSE"
 
 COPYFILE_DISABLE=1 tar -C dist/bundle -czf "dist/$name.tar.gz" "$name"
 echo "built dist/$name.tar.gz ($(du -h "dist/$name.tar.gz" | cut -f1))"
+full="dist/passwall-gl-full_${version}-$(sed -n 's/^PKG_RELEASE:=//p' passwall-gl/Makefile)_$ARCH.ipk"
+echo "built $full ($(du -h "$full" | cut -f1))"

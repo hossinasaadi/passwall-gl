@@ -26,11 +26,16 @@ say "Stopping PassWall"
 /etc/init.d/passwall_server stop >/dev/null 2>&1
 
 say "Removing packages"
-opkg remove passwall-gl luci-app-passwall
-# Helpers only PassWall uses. Packages from GL's feed stay; other things may
+# Installed either as one package (uploaded through a web page) or as the
+# bundle's separate packages. Packages from GL's feed stay; other things may
 # depend on them.
-opkg remove xray-core geoview chinadns-ng dns2socks microsocks tcping ipt2socks \
-	v2ray-geoip v2ray-geosite 2>/dev/null
+if opkg status passwall-gl-full | grep -q '^Status: .* installed'; then
+	opkg remove passwall-gl-full
+else
+	opkg remove passwall-gl luci-app-passwall
+	opkg remove xray-core geoview chinadns-ng dns2socks microsocks tcping ipt2socks \
+		v2ray-geoip v2ray-geosite 2>/dev/null
+fi
 
 say "Undoing PassWall's settings changes"
 uci -q delete firewall.passwall
@@ -55,5 +60,7 @@ fi
 
 /etc/init.d/dnsmasq restart >/dev/null 2>&1
 /etc/init.d/firewall restart >/dev/null 2>&1
+# Drop the PassWall module GL's web server workers still hold.
+nginx -s reload >/dev/null 2>&1
 rm -f /tmp/passwall-gl-uninstall.sh
 say "PassWall removed."

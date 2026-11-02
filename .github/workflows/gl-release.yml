@@ -1,0 +1,124 @@
+# Build PassWall for GL.iNet and publish a GitHub release.
+#
+# Push a tag matching passwall-gl/Makefile's PKG_VERSION (e.g. v0.2.0) to
+# release. Run it by hand to get a test build as a workflow artifact; give it
+# a tag to publish that build as a release instead.
+
+name: GL release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Publish as this release tag (e.g. v0.2.0). Leave empty for a test build only.
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gl-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ARCH: aarch64_cortex-a53
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the package version
+        run: |
+          version=$(sed -n 's/^PKG_VERSION:=//p' passwall-gl/Makefile)
+          release=$(sed -n 's/^PKG_RELEASE:=//p' passwall-gl/Makefile)
+          {
+            echo "VERSION=$version"
+            echo "FULL_IPK=passwall-gl-full_${version}-${release}_${ARCH}.ipk"
+            echo "BUNDLE=passwall-gl-${version}-${ARCH}.tar.gz"
+          } >> "$GITHUB_ENV"
+          if [ -n "$TAG" ] && [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG doesn't match PKG_VERSION $version in passwall-gl/Makefile"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: passwall-gl/ui/package-lock.json
+
+      - name: Install the page's build tools
+        run: npm --prefix passwall-gl/ui ci
+
+      - name: Build Xray, PassWall's helpers and geo data
+        run: tools/build-deps.sh
+
+      - name: Pack the bundle and the one-file package
+        run: tools/make-bundle.sh
+
+      - name: Collect the release files
+        run: |
+          mkdir release
+          cp "dist/$BUNDLE" "dist/$FULL_IPK" release/
+          # Sources of the bundled third-party programs, for their GPL and AGPL
+          # licenses; this repository's own source is the release's source archive.
+          tar -xzOf "dist/$BUNDLE" "passwall-gl-${VERSION}-${ARCH}/SOURCES.txt" > dist/deps/sources/SOURCES.txt
+          tar -C dist/deps -czf "release/passwall-gl-${VERSION}-third-party-sources.tar.gz" sources
+          (cd release && sha256sum -- * > SHA256SUMS)
+          ls -l release
+
+      - name: Write the release notes
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG:-vX}"
+          cat > notes.md <<EOF
+          PassWall for GL.iNet ${VERSION}, built for GL.iNet 4.x routers on OpenWrt 21.02 with the
+          \`${ARCH}\` architecture (tested on the GL-MT3000). Back up your router's settings first.
+
+          ### Install from the browser (LuCI)
+
+          1. Download \`${FULL_IPK}\`.
+          2. Open \`http://192.168.8.1:8080\` → **System → Software**, click **Update lists…**.
+          3. Click **Upload Package…**, choose the file, install it.
+          4. Open the GL admin panel → **VPN → PassWall**.
+
+          ### Install over SSH
+
+          This downloads the bundle straight onto the router and runs its installer:
+
+          \`\`\`sh
+          ssh root@192.168.8.1 'cd /tmp && curl -fL -o pw.tar.gz ${url}/${BUNDLE} && tar -xzf pw.tar.gz && sh passwall-gl-${VERSION}-${ARCH}/install.sh'
+          \`\`\`
+
+          ### Files
+
+          | File | What |
+          |---|---|
+          | \`${FULL_IPK}\` | Everything in one package, for LuCI's Upload Package |
+          | \`${BUNDLE}\` | Installer and separate packages, for SSH |
+          | \`passwall-gl-${VERSION}-third-party-sources.tar.gz\` | Sources of the bundled third-party programs |
+          | \`SHA256SUMS\` | Checksums |
+
+          Use the same install method for updates; the two don't mix.
+          EOF
+
+      - name: Keep the build as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: passwall-gl-${{ env.VERSION }}-${{ env.ARCH }}
+          path: release/
+
+      - name: Publish the release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" release/* \
+            --title "PassWall for GL.iNet ${VERSION}" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA"

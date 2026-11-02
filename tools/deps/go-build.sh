@@ -26,8 +26,9 @@ fetch() {
 	url=${url%\?}
 	curl -fsSL "$url" -o "$work/$pkg.tar.gz"
 	echo "$hash  $work/$pkg.tar.gz" | sha256sum -c - >&2
-	mkdir -p "$work/$pkg"
+	mkdir -p "$work/$pkg" /out/sources
 	tar -xzf "$work/$pkg.tar.gz" -C "$work/$pkg" --strip-components=1
+	cp "$work/$pkg.tar.gz" "/out/sources/$pkg-$ver.tar.gz"
 	echo "$ver" > "$stage/$pkg.version"
 	echo "$ver"
 }

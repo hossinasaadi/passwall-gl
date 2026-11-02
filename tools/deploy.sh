@@ -31,6 +31,9 @@ page)
 	push $r/usr/share/gl-validator.d/passwall.lua /usr/share/gl-validator.d/passwall.lua
 	push $r/usr/share/passwall-gl/api.lua /usr/share/passwall-gl/api.lua
 	push $r/www/views/gl-sdk4-ui-passwall.common.js.gz /www/views/gl-sdk4-ui-passwall.common.js.gz
+	# GL's web server workers cache RPC modules; start fresh ones (graceful).
+	# shellcheck disable=SC2086
+	ssh $SSH_OPTS "$host" 'nginx -s reload'
 	echo "Page copied. Reload the GL admin panel; it is under VPN > PassWall."
 	;;
 ipk)

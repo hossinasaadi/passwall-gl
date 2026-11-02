@@ -2,16 +2,13 @@
 # PassWall for GL.iNet: installer. Run on the router as root from the
 # unpacked bundle:   sh install.sh
 #
-# It checks the router, notes the few settings PassWall's installer changes
-# (so uninstall.sh can put them back), then installs everything in one opkg
-# transaction. PassWall stays switched off until you turn it on under
-# VPN > PassWall.
+# It checks the router, then installs everything in one opkg transaction.
+# PassWall stays switched off until you turn it on under VPN > PassWall.
 
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 arch=$(cat "$here/ARCH")
-saved=/etc/passwall-gl/saved
 # Needed by PassWall's iptables rules but not a package dependency (upstream
 # selects these in its build config instead). The rest of that list ships
 # with GL's firmware.
@@ -35,15 +32,6 @@ opkg print-architecture | grep -q " $arch " ||
 
 free_kb=$(df -k /overlay | awk 'NR==2 {print $4}')
 [ "${free_kb:-0}" -ge 61440 ] || die "need at least 60 MB free in /overlay"
-
-# PassWall's first-run script sets these two; keep the originals once.
-if [ ! -f "$saved" ]; then
-	mkdir -p "$(dirname "$saved")"
-	{
-		echo "localuse=$(uci -q get dhcp.@dnsmasq[0].localuse)"
-		echo "max_requests=$(uci -q get uhttpd.main.max_requests)"
-	} > "$saved"
-fi
 
 say "Updating package lists"
 opkg update >/dev/null || die "opkg update failed; is the router online?"

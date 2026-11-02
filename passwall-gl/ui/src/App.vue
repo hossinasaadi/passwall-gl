@@ -22,9 +22,11 @@
 <script>
 import StatusView from './views/StatusView.vue'
 import NodesView from './views/NodesView.vue'
+import SubscriptionsView from './views/SubscriptionsView.vue'
+import RoutingView from './views/RoutingView.vue'
 import LogView from './views/LogView.vue'
 
-const VIEWS = { status: StatusView, nodes: NodesView, log: LogView }
+const VIEWS = { status: StatusView, nodes: NodesView, subscriptions: SubscriptionsView, routing: RoutingView, log: LogView }
 
 export default {
   name: 'PasswallPage',
@@ -34,6 +36,8 @@ export default {
       tabs: [
         { id: 'status', label: 'Basic Settings' },
         { id: 'nodes', label: 'Node List' },
+        { id: 'subscriptions', label: 'Subscriptions' },
+        { id: 'routing', label: 'Routing' },
         { id: 'log', label: 'Runtime Logs' },
       ],
     }
@@ -74,6 +78,10 @@ export default {
   overflow-x: auto;
   border-bottom: 1px solid var(--pw-border);
   margin-bottom: 16px;
+  scrollbar-width: none;
+}
+.pw-tabs::-webkit-scrollbar {
+  display: none;
 }
 .pw-tab {
   border: 0;
@@ -249,6 +257,13 @@ export default {
 .pw-error {
   background: #fdecea;
   color: var(--pw-bad);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.pw-notice {
+  background: #e8f6ee;
+  color: var(--pw-ok);
   border-radius: 6px;
   padding: 8px 12px;
   margin-bottom: 12px;

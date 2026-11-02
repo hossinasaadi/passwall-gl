@@ -1,11 +1,14 @@
 <template>
   <div>
     <div v-if="error" class="pw-error">{{ error }}</div>
+    <div v-if="notice" class="pw-notice">{{ notice }}</div>
 
     <section v-if="adding" class="pw-card">
       <h3 class="pw-card-title"><span>Add nodes from share links</span></h3>
       <p class="pw-row-help">
         One link per line: vless://, vmess://, trojan://, ss://, socks://, hysteria2:// and similar.
+        For a provider's https:// subscription address, use
+        <a href="#" @click.prevent="$emit('goto', 'subscriptions')">Subscriptions</a>.
       </p>
       <textarea v-model="links" class="pw-textarea" spellcheck="false" placeholder="vless://…"></textarea>
       <div class="pw-toolbar">
@@ -75,7 +78,7 @@
 </template>
 
 <script>
-import { rpc } from '../rpc.js'
+import { rpc, asList } from '../rpc.js'
 import { typeLabel } from '../labels.js'
 
 // GL serves its admin API from two nginx workers, and a running test holds
@@ -98,6 +101,7 @@ export default {
       busy: false,
       testing: false,
       error: '',
+      notice: '',
     }
   },
   computed: {
@@ -128,9 +132,9 @@ export default {
       this.error = e.message || String(e)
     },
     load() {
-      return rpc('list_nodes')
+      return rpc('get_nodes')
         .then((r) => {
-          this.nodes = r.nodes || []
+          this.nodes = asList(r.nodes)
           this.current = r.current || null
           this.loaded = true
           const keep = {}
@@ -207,11 +211,12 @@ export default {
     },
     addLinks() {
       this.busy = true
-      this.error = ''
+      this.error = this.notice = ''
       rpc('add_links', { links: this.links, group: this.group })
-        .then(() => {
+        .then((r) => {
           this.links = ''
           this.adding = false
+          this.notice = r.added === 1 ? 'Added 1 node.' : `Added ${r.added} nodes.`
           return this.load()
         })
         .catch(this.fail)

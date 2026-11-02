@@ -34,3 +34,11 @@ for p in $PACKAGES; do
 done
 
 find bin/packages -path '*passwall_packages*' -name '*.ipk' -exec cp -v {} /out/ \;
+# The SDK image starts with an empty dl/, so it now holds exactly what these
+# builds downloaded: sources, plus ChinaDNS-NG's upstream binary and the geo data.
+mkdir -p /out/sources
+cp -v dl/* /out/sources/
+# The package recipes too: Makefiles, patches, and sources that live in the
+# feed itself rather than being downloaded (dns2socks).
+# shellcheck disable=SC2086
+tar -czf /out/sources/openwrt-package-recipes.tar.gz -C feeds/passwall_packages $PACKAGES
