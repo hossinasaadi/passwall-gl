@@ -33,6 +33,13 @@ opkg print-architecture | grep -q " $arch " ||
 free_kb=$(df -k /overlay | awk 'NR==2 {print $4}')
 [ "${free_kb:-0}" -ge 61440 ] || die "need at least 60 MB free in /overlay"
 
+# The one-file package holds the same files as the separate packages below.
+# Remove it first; opkg keeps changed settings files, so nodes and lists stay.
+if opkg status passwall-gl-full | grep -q '^Status: .* installed'; then
+	say "Replacing the one-file install"
+	opkg remove passwall-gl-full >/dev/null || die "could not remove passwall-gl-full"
+fi
+
 say "Updating package lists"
 opkg update >/dev/null || die "opkg update failed; is the router online?"
 

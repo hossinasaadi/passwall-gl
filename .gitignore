@@ -14,3 +14,4 @@ passwall-gl/root/www/views/*.gz
 
 # Router settings backups: contain Wi-Fi and admin passwords.
 router-backups/
+__pycache__/

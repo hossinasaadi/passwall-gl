@@ -252,7 +252,11 @@ def passwall_gl_full(arch="aarch64_cortex-a53"):
             "and the GL admin page",
             # The GL part first: LUCI_POSTINST ends the script with exit 0.
             trees, postinst=gl["postinst"] + LUCI_POSTINST, preinst=gl["preinst"], conffiles=PASSWALL_CONFFILES,
-            arch=arch, control_extra=["Conflicts: " + ", ".join(sorted(bundled))],
+            # Conflicts plus Replaces: opkg removes any of these that are
+            # installed (an SSH-bundle install, or GL's own xray-core) and takes
+            # over their files, instead of refusing. Changed settings files stay.
+            arch=arch, control_extra=["Conflicts: " + ", ".join(sorted(bundled)),
+                                      "Replaces: " + ", ".join(sorted(bundled))],
         )
 
 
