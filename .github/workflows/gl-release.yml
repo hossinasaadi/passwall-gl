@@ -118,7 +118,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" release/* \
-            --title "PassWall for GL.iNet ${VERSION}" \
-            --notes-file notes.md \
-            --target "$GITHUB_SHA"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Made by hand on GitHub, which also pushes the tag that started
+            # this run: add the files, and the notes if it has none.
+            gh release upload "$TAG" release/* --clobber
+            if [ -z "$(gh release view "$TAG" --json body --jq .body)" ]; then
+              gh release edit "$TAG" --title "PassWall for GL.iNet ${VERSION}" --notes-file notes.md
+            fi
+          else
+            gh release create "$TAG" release/* \
+              --title "PassWall for GL.iNet ${VERSION}" \
+              --notes-file notes.md \
+              --target "$GITHUB_SHA"
+          fi
