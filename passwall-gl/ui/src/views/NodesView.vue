@@ -76,14 +76,11 @@
 
 <script>
 import { rpc } from '../rpc.js'
+import { typeLabel } from '../labels.js'
 
-const PROTOCOLS = {
-  vless: 'VLESS', vmess: 'VMess', trojan: 'Trojan', shadowsocks: 'SS', socks: 'SOCKS', http: 'HTTP',
-  wireguard: 'WG', hysteria2: 'HY2', _shunt: 'Shunt', _balancing: 'Balancer', _urltest: 'URLTest', _iface: 'Interface',
-}
-
-// GL's RPC server handles one request at a time, so tests run two at a time.
-const TEST_CONCURRENCY = 2
+// GL serves its admin API from two nginx workers, and a running test holds
+// one of them, so tests go one at a time to keep the panel responsive.
+const TEST_CONCURRENCY = 1
 
 export default {
   name: 'NodesView',
@@ -142,9 +139,7 @@ export default {
         })
         .catch(this.fail)
     },
-    typeLabel(n) {
-      return PROTOCOLS[n.protocol] || n.protocol || n.type || ''
-    },
+    typeLabel,
     result(n) {
       return this.results[n.id] || {}
     },

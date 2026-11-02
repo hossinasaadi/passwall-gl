@@ -11,3 +11,6 @@ passwall-gl/ui/dist/
 passwall-gl/root/www/views/*.gz
 
 .claude/settings.local.json
+
+# Router settings backups: contain Wi-Fi and admin passwords.
+router-backups/

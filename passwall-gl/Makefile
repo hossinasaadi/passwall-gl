@@ -36,8 +36,11 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DATA) ./root/usr/share/oui/menu.d/passwall.json $(1)/usr/share/oui/menu.d/
 	$(INSTALL_DIR) $(1)/usr/lib/oui-httpd/rpc
 	$(INSTALL_DATA) ./root/usr/lib/oui-httpd/rpc/passwall $(1)/usr/lib/oui-httpd/rpc/
+	$(INSTALL_DIR) $(1)/usr/share/gl-validator.d
+	$(INSTALL_DATA) ./root/usr/share/gl-validator.d/passwall.lua $(1)/usr/share/gl-validator.d/
 	$(INSTALL_DIR) $(1)/usr/share/passwall-gl
 	$(INSTALL_DATA) ./root/usr/share/passwall-gl/api.lua $(1)/usr/share/passwall-gl/
+	$(INSTALL_BIN) ./root/usr/share/passwall-gl/uninstall.sh $(1)/usr/share/passwall-gl/
 	$(INSTALL_DIR) $(1)/www/views
 	$(INSTALL_DATA) ./root/www/views/gl-sdk4-ui-passwall.common.js.gz $(1)/www/views/
 endef

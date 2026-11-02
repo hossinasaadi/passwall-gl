@@ -7,12 +7,14 @@ quick install-and-test cycles on a router.
 
   python3 tools/build-ipk.py            # builds both into dist/
   python3 tools/build-ipk.py passwall-gl
+  python3 tools/build-ipk.py bin --help # pack a prebuilt binary (used by build-deps.sh)
 
 Differences from an SDK build: LuCI translations (.lmo) are not compiled, so
 the LuCI pages show English, and dependencies are taken from the Makefiles
 as written (Kconfig "select" options are not added).
 """
 
+import argparse
 import io
 import os
 import re
@@ -69,28 +71,35 @@ def source_date() -> int:
         return 0
 
 
+def add_path(tar: tarfile.TarFile, path: Path, rel: str, mtime: int, seen: set) -> int:
+    """Add one file or directory at rel, plus any missing parent directories.
+    Only the exec bit is taken from disk; owners and other modes are normalised."""
+    parts = rel.strip("/").split("/")
+    for i in range(1, len(parts) if path.is_file() else len(parts) + 1):
+        d = "./" + "/".join(parts[:i])
+        if d not in seen:
+            seen.add(d)
+            info = tarfile.TarInfo(d)
+            info.type, info.mode, info.mtime = tarfile.DIRTYPE, 0o755, mtime
+            tar.addfile(info)
+    if not path.is_file():
+        return 0
+    data = path.read_bytes()
+    info = tarfile.TarInfo("./" + rel.strip("/"))
+    info.size, info.mtime = len(data), mtime
+    info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
+    tar.addfile(info, io.BytesIO(data))
+    return len(data)
+
+
 def add_tree(tar: tarfile.TarFile, src: Path, dest: str, mtime: int, seen: set) -> int:
-    """Add src/* under dest/ in the archive, keeping only the exec bit from disk."""
+    """Add src/* under dest/ in the archive."""
     size = 0
     for path in sorted(src.rglob("*")):
         if path.name == ".DS_Store" or path.name.startswith("._"):
             continue
         rel = dest.rstrip("/") + "/" + path.relative_to(src).as_posix()
-        parts = rel.strip("/").split("/")
-        for i in range(1, len(parts) if path.is_file() else len(parts) + 1):
-            d = "./" + "/".join(parts[:i])
-            if d not in seen:
-                seen.add(d)
-                info = tarfile.TarInfo(d)
-                info.type, info.mode, info.mtime = tarfile.DIRTYPE, 0o755, mtime
-                tar.addfile(info)
-        if path.is_file():
-            data = path.read_bytes()
-            info = tarfile.TarInfo("./" + rel.strip("/"))
-            info.size, info.mtime = len(data), mtime
-            info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
-            tar.addfile(info, io.BytesIO(data))
-            size += len(data)
+        size += add_path(tar, path, rel, mtime, seen)
     return size
 
 
@@ -107,12 +116,14 @@ def member(name: str, data: bytes, mtime: int, mode: int = 0o644) -> tuple[tarfi
     return info, io.BytesIO(data)
 
 
-def build_ipk(name, version, depends, section, description, trees, postinst="", conffiles=()):
+def build_ipk(name, version, depends, section, description, trees=(), files=(), postinst="",
+              conffiles=(), arch="all", license="GPL-3.0-only", out=OUT):
     mtime = source_date()
 
     def data(tar):
         seen = set()
-        return sum(add_tree(tar, src, dest, mtime, seen) for src, dest in trees if src.is_dir())
+        size = sum(add_tree(tar, src, dest, mtime, seen) for src, dest in trees if src.is_dir())
+        return size + sum(add_path(tar, src, dest, mtime, seen) for src, dest in files)
 
     data_tgz, installed = tar_bytes(data, mtime)
 
@@ -120,9 +131,9 @@ def build_ipk(name, version, depends, section, description, trees, postinst="", 
         f"Package: {name}",
         f"Version: {version}",
         "Depends: " + ", ".join(["libc"] + depends),
-        "License: GPL-3.0-only",
+        f"License: {license}",
         f"Section: {section}",
-        "Architecture: all",
+        f"Architecture: {arch}",
         f"Installed-Size: {installed}",
         f"Description: {description}",
     ]) + "\n"
@@ -137,13 +148,13 @@ def build_ipk(name, version, depends, section, description, trees, postinst="", 
 
     control_tgz, _ = tar_bytes(ctrl, mtime)
 
-    OUT.mkdir(exist_ok=True)
-    dest = OUT / f"{name}_{version}_all.ipk"
+    out.mkdir(parents=True, exist_ok=True)
+    dest = out / f"{name}_{version}_{arch}.ipk"
     with tarfile.open(dest, mode="w:gz", format=tarfile.USTAR_FORMAT) as ipk:
         ipk.addfile(*member("debian-binary", b"2.0\n", mtime))
         ipk.addfile(*member("data.tar.gz", data_tgz, mtime))
         ipk.addfile(*member("control.tar.gz", control_tgz, mtime))
-    print(f"built {dest.relative_to(REPO)} ({dest.stat().st_size} bytes)")
+    print(f"built {dest.relative_to(REPO) if dest.is_relative_to(REPO) else dest} ({dest.stat().st_size} bytes)")
 
 
 def luci_app_passwall():
@@ -174,9 +185,35 @@ def passwall_gl():
     )
 
 
+def prebuilt(argv):
+    """Pack already-built files (e.g. a Go binary) as an architecture-specific ipk."""
+    p = argparse.ArgumentParser(prog="build-ipk.py bin")
+    p.add_argument("--name", required=True)
+    p.add_argument("--version", required=True)
+    p.add_argument("--arch", required=True)
+    p.add_argument("--depends", default="", help="comma-separated")
+    p.add_argument("--license", required=True)
+    p.add_argument("--section", default="net")
+    p.add_argument("--description", required=True)
+    p.add_argument("--out", type=Path, default=OUT)
+    p.add_argument("files", nargs="+", metavar="SRC=DEST")
+    a = p.parse_args(argv)
+    files = []
+    for spec in a.files:
+        src, sep, dest = spec.partition("=")
+        if not sep or not dest.startswith("/"):
+            raise SystemExit(f"expected SRC=/absolute/dest, got {spec}")
+        files.append((Path(src), dest))
+    build_ipk(a.name, a.version, [d.strip() for d in a.depends.split(",") if d.strip()],
+              a.section, a.description, files=files, arch=a.arch, license=a.license, out=a.out)
+
+
 BUILDERS = {"luci-app-passwall": luci_app_passwall, "passwall-gl": passwall_gl}
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["bin"]:
+        prebuilt(sys.argv[2:])
+        sys.exit()
     names = sys.argv[1:] or list(BUILDERS)
     for n in names:
         if n not in BUILDERS:

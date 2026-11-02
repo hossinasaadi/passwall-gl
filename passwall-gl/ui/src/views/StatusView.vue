@@ -23,10 +23,12 @@
           Node
           <div v-if="status.node_remark" class="pw-row-help">{{ status.node_remark }}</div>
         </div>
-        <select class="pw-select" :value="status.node || ''" :disabled="busy || !nodes.length" @change="setNode($event.target.value)">
-          <option value="" disabled>{{ nodes.length ? 'Choose a node' : 'No nodes yet' }}</option>
+        <!-- :selected on each option, not :value on the select: the options can
+             arrive after the value, and the select would keep the first one. -->
+        <select class="pw-select" :disabled="busy || !nodes.length" @change="setNode($event.target.value)">
+          <option value="" disabled :selected="!status.node">{{ nodes.length ? 'Choose a node' : 'No nodes yet' }}</option>
           <optgroup v-for="g in groupedNodes" :key="g.name" :label="g.name">
-            <option v-for="n in g.nodes" :key="n.id" :value="n.id">{{ n.remark || n.remarks }}</option>
+            <option v-for="n in g.nodes" :key="n.id" :value="n.id" :selected="n.id === status.node">{{ nodeLabel(n) }}</option>
           </optgroup>
         </select>
       </div>
@@ -92,6 +94,7 @@
 
 <script>
 import { rpc } from '../rpc.js'
+import { nodeLabel } from '../labels.js'
 
 // PassWall's defaults for options that are unset in UCI.
 const DEFAULTS = {
@@ -158,7 +161,10 @@ export default {
     clearInterval(this.timer)
   },
   methods: {
+    nodeLabel,
+    // Red only means "should be running but isn't"; while off, stay neutral.
     dot(v) {
+      if (!this.status.enabled) return ''
       if (v === true) return 'is-ok'
       if (v === false) return 'is-bad'
       return ''
