@@ -4,7 +4,7 @@ PassWall with the Xray core, as a page inside the GL.iNet 4.x admin panel. Add y
 subscription, pick one, switch it on: devices on your network, and the router itself, go
 through the proxy, with lists for what goes direct, through the proxy, or gets blocked.
 
-![Basic Settings](screenshots/basic-settings.png)
+![PassWall's Basic Settings inside the GL.iNet admin panel](screenshots/panel-basic-settings.png)
 
 <sub>Screenshots use sample data.</sub>
 
@@ -24,7 +24,7 @@ through the proxy, with lists for what goes direct, through the proxy, or gets b
 
 | Node list | Subscriptions |
 |---|---|
-| ![Node list](screenshots/node-list.png) | ![Subscriptions](screenshots/subscriptions.png) |
+| ![Node list](screenshots/panel-node-list.png) | ![Subscriptions](screenshots/subscriptions.png) |
 
 | Routing | On a phone |
 |---|---|

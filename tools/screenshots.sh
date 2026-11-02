@@ -1,6 +1,8 @@
 #!/bin/sh
 # Capture the README screenshots of the GL page from the local preview, which
 # uses sample data, so no real nodes or addresses end up in the images.
+# (panel-basic-settings.png and panel-node-list.png are captures of the real
+# admin panel with the sample node painted in; they aren't made here.)
 #
 # Start the preview first:
 #   npm --prefix passwall-gl/ui run dev -- --port 5178
@@ -24,8 +26,6 @@ shot() {
 	echo "wrote $OUT/$1.png"
 }
 
-shot basic-settings 1100 1000 "tab=status&run=probe"
-shot node-list 1100 520 "tab=nodes&run=urltest"
 shot subscriptions 1100 700 "tab=subscriptions&run=edit"
 shot routing 1100 690 "tab=routing"
 
