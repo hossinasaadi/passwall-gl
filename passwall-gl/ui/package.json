@@ -1,0 +1,17 @@
+{
+  "name": "passwall-gl-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "PassWall page for the GL.iNet 4.x admin panel",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.config.mjs",
+    "build": "vite build --config vite.config.mjs && node scripts/gzip-view.mjs"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue2": "2.3.4",
+    "vite": "7.3.7",
+    "vue": "2.7.16"
+  }
+}

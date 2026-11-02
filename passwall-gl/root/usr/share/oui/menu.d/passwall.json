@@ -1,0 +1,12 @@
+{
+    "index": 60,
+    "view": "passwall",
+    "title": "PassWall",
+    "level": 2,
+    "parent": "vpn",
+    "parent_icon": "vpn",
+    "parent_index": 40,
+    "show_mode": [
+        "router"
+    ]
+}

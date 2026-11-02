@@ -1,0 +1,13 @@
+.DS_Store
+._*
+
+# Router survey output: contains local addresses and device details.
+recon*.txt
+
+# Build output
+/dist/
+passwall-gl/ui/node_modules/
+passwall-gl/ui/dist/
+passwall-gl/root/www/views/*.gz
+
+.claude/settings.local.json

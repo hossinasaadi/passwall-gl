@@ -1,0 +1,46 @@
+-- PassWall GL.iNet fork: RPC module for GL's admin UI (oui-httpd).
+--
+-- This is free software, licensed under the GNU General Public License v3.
+--
+-- oui-httpd may run a different Lua than PassWall, so this module stays thin:
+-- it hands each call to /usr/share/passwall-gl/api.lua, which runs under
+-- PassWall's own Lua 5.1 environment. Arguments travel in a temporary JSON
+-- file, so caller data never becomes part of a shell command.
+
+local cjson = require "cjson"
+
+local BACKEND = "/usr/share/passwall-gl/api.lua"
+
+local function call(method, args)
+	local req = os.tmpname()
+	local f = io.open(req, "w")
+	if not f then
+		return { code = -1, error = "cannot create request file" }
+	end
+	f:write(cjson.encode(type(args) == "table" and args or {}))
+	f:close()
+
+	local p = io.popen("lua " .. BACKEND .. " " .. method .. " " .. req .. " 2>/dev/null")
+	local out = p and p:read("*a") or ""
+	if p then p:close() end
+	os.remove(req)
+
+	local ok, res = pcall(cjson.decode, out)
+	if not ok or type(res) ~= "table" then
+		return { code = -1, error = "backend returned no result" }
+	end
+	return res
+end
+
+local M = {}
+
+-- Method names are fixed here; they are the only words that reach the shell.
+for _, name in ipairs({
+	"status", "get_global", "set_global",
+	"list_nodes", "set_node", "ping_node", "urltest_node", "add_links", "delete_nodes",
+	"connect_status", "get_log", "clear_log", "restart",
+}) do
+	M[name] = function(args) return call(name, args) end
+end
+
+return M
